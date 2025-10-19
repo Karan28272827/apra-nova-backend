@@ -1,33 +1,53 @@
 
-version: '3.9'
-
 services:
+  db:
+    image: postgres:16
+    container_name: db
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    container_name: web
+    command: >
+      sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - .:/app
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://myuser:mypassword@db:5432/mydb
+      - REDIS_URL=redis://redis:6379
     depends_on:
-      - db
-      - redis
-    environment:
-      - DEBUG=1
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/apra_nova_db
-
-  db:
-    image: postgres:13
-    restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: apra_nova_db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  ui:
+    image: vijay9440/nova     # your built frontend image
+    container_name: ui
     ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
-
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://web:8000  # 👈 backend service name (not localhost)
+    depends_on:
+      - web
+volumes:
+  postgres_data:
